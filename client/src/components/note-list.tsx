@@ -1,8 +1,9 @@
 import { type Note } from "@shared/schema";
 import { Card, CardHeader, CardContent, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, Tag } from "lucide-react";
+import { Calendar, Tag, Clock } from "lucide-react";
 import { Link } from "wouter";
+import { format } from "date-fns";
 
 interface NoteListProps {
   notes: Note[];
@@ -29,6 +30,10 @@ export default function NoteList({ notes, isLoading }: NoteListProps) {
           <Card className="cursor-pointer hover:shadow-md transition-shadow">
             <CardHeader>
               <h3 className="font-medium">{note.title}</h3>
+              <div className="text-sm text-muted-foreground flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                {format(new Date(note.createdAt), "PPp")}
+              </div>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground line-clamp-3">
@@ -39,10 +44,10 @@ export default function NoteList({ notes, isLoading }: NoteListProps) {
               {note.startTime && (
                 <Badge variant="secondary">
                   <Calendar className="h-3 w-3 mr-1" />
-                  {new Date(note.startTime).toLocaleDateString()}
+                  {format(new Date(note.startTime), "PPp")}
                 </Badge>
               )}
-              {note.tags.map((tag) => (
+              {note.tags?.map((tag) => (
                 <Badge key={tag} variant="outline">
                   <Tag className="h-3 w-3 mr-1" />
                   {tag}
