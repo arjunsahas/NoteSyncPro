@@ -1,4 +1,6 @@
-import { type Note, type InsertNote, type SearchParams } from "@shared/schema";
+import { type Note, type InsertNote, type SearchParams, notes } from "@shared/schema";
+import { db } from "./db";
+import { eq, like, and, or, gte, lte, sql } from "drizzle-orm";
 
 export interface IStorage {
   getNotes(): Promise<Note[]>;
@@ -9,83 +11,71 @@ export interface IStorage {
   searchNotes(params: SearchParams): Promise<Note[]>;
 }
 
-export class MemStorage implements IStorage {
-  private notes: Map<number, Note>;
-  private currentId: number;
-
-  constructor() {
-    this.notes = new Map();
-    this.currentId = 1;
-  }
-
+export class DatabaseStorage implements IStorage {
   async getNotes(): Promise<Note[]> {
-    return Array.from(this.notes.values());
+    return await db.select().from(notes);
   }
 
   async getNote(id: number): Promise<Note | undefined> {
-    return this.notes.get(id);
+    const [note] = await db.select().from(notes).where(eq(notes.id, id));
+    return note;
   }
 
   async createNote(insertNote: InsertNote): Promise<Note> {
-    const id = this.currentId++;
-    const note: Note = {
-      ...insertNote,
-      id,
-      createdAt: new Date(),
-    };
-    this.notes.set(id, note);
+    const [note] = await db.insert(notes).values(insertNote).returning();
     return note;
   }
 
   async updateNote(id: number, update: Partial<InsertNote>): Promise<Note | undefined> {
-    const existing = this.notes.get(id);
-    if (!existing) return undefined;
-    
-    const updated: Note = {
-      ...existing,
-      ...update,
-    };
-    this.notes.set(id, updated);
-    return updated;
+    const [note] = await db
+      .update(notes)
+      .set(update)
+      .where(eq(notes.id, id))
+      .returning();
+    return note;
   }
 
   async deleteNote(id: number): Promise<boolean> {
-    return this.notes.delete(id);
+    const [deleted] = await db
+      .delete(notes)
+      .where(eq(notes.id, id))
+      .returning();
+    return !!deleted;
   }
 
   async searchNotes(params: SearchParams): Promise<Note[]> {
-    let results = Array.from(this.notes.values());
+    const conditions = [];
 
     if (params.query) {
-      const query = params.query.toLowerCase();
-      results = results.filter(note => 
-        note.title.toLowerCase().includes(query) || 
-        note.content.toLowerCase().includes(query)
+      conditions.push(
+        or(
+          like(notes.title, `%${params.query}%`),
+          like(notes.content, `%${params.query}%`)
+        )
       );
     }
 
     if (params.tags && params.tags.length > 0) {
-      results = results.filter(note =>
-        params.tags!.some(tag => note.tags.includes(tag))
+      conditions.push(
+        // Using overlap operator for array contains
+        sql`${notes.tags} && ${sql.array(params.tags, 'text')}::text[]`
       );
     }
 
     if (params.startDate) {
-      const start = new Date(params.startDate);
-      results = results.filter(note => 
-        note.startTime && new Date(note.startTime) >= start
-      );
+      conditions.push(gte(notes.startTime, new Date(params.startDate)));
     }
 
     if (params.endDate) {
-      const end = new Date(params.endDate);
-      results = results.filter(note => 
-        note.endTime && new Date(note.endTime) <= end
-      );
+      conditions.push(lte(notes.endTime, new Date(params.endDate)));
     }
 
-    return results;
+    return await db
+      .select()
+      .from(notes)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(notes.createdAt);
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
